@@ -14,6 +14,9 @@ class EnumTest < ActiveRecord::TestCase
 
   test "query state by predicate" do
     assert_predicate @book, :published?
+    assert_predicate @book, :not_written?
+    assert_predicate @book, :not_proposed?
+    assert_not_predicate @book, :not_published?
     assert_not_predicate @book, :written?
     assert_not_predicate @book, :proposed?
 
@@ -603,5 +606,70 @@ class EnumTest < ActiveRecord::TestCase
     assert_match(expected_message, logger.logged(:warn).first)
   ensure
     ActiveRecord::Base.logger = old_logger
+  end
+
+  test "all predicates are false when enum value is blank" do
+    book = Book.new
+    book.status = nil
+
+    assert_not_predicate book, :written?
+    assert_not_predicate book, :proposed?
+    assert_not_predicate book, :published?
+    assert_not_predicate book, :not_written?
+    assert_not_predicate book, :not_proposed?
+    assert_not_predicate book, :not_published?
+  end
+
+  test "explicit inverse values within the same enum" do
+    klass = Class.new(ActiveRecord::Base) do
+      self.table_name = "books"
+      enum status: [:not_written, :written, :published]
+    end
+    book = klass.new(status: :not_written)
+
+    assert_equal book.status, "not_written"
+    assert_predicate book, :not_written?
+    assert_not_predicate book, :written?
+    assert_predicate book, :not_published?
+    assert_not_predicate book, :published?
+
+    book.written!
+
+    assert_equal book.status, "written"
+    assert_not_predicate book, :not_written?
+    assert_predicate book, :written?
+    assert_predicate book, :not_published?
+    assert_not_predicate book, :published?
+
+    book.published!
+
+    assert_equal book.status, "published"
+    assert_not_predicate book, :not_written?
+    assert_not_predicate book, :written?
+    assert_not_predicate book, :not_published?
+    assert_predicate book, :published?
+  end
+
+  test "conflicting inverse values cannot be defined in a different enum" do
+    e = assert_raises(ArgumentError) do
+      Class.new(ActiveRecord::Base) do
+        self.table_name = "books"
+        enum status: [:proposed, :written, :published]
+        enum conflicting_status: [:not_written, :definitely_written]
+      end
+    end
+
+    assert_match(/instance method "not_written\?", which is already defined by another enum/, e.message)
+  end
+
+  test "no inverse predicate methods if value starts with not_" do
+    book = Class.new(ActiveRecord::Base) do
+      self.table_name = "books"
+      enum status: [:not_written, :written]
+    end.new(status: :written)
+
+    assert_not_predicate book, :not_written?
+    assert_predicate book, :written?
+    assert_raises(NoMethodError) { book.not_not_written? }
   end
 end

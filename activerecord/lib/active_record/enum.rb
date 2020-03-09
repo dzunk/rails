@@ -14,11 +14,15 @@ module ActiveRecord
   #   conversation.active!
   #   conversation.active? # => true
   #   conversation.status  # => "active"
+  #   conversation.archived?     # => false
+  #   conversation.not_archived? # => true
   #
   #   # conversation.update! status: 1
   #   conversation.archived!
-  #   conversation.archived? # => true
-  #   conversation.status    # => "archived"
+  #   conversation.archived?   # => true
+  #   conversation.status      # => "archived"
+  #   conversation.active?     # => false
+  #   conversation.not_active? # => true
   #
   #   # conversation.status = 1
   #   conversation.status = "archived"
@@ -191,13 +195,21 @@ module ActiveRecord
               suffix = "_#{enum_suffix}"
             end
 
+            inverse_label = "not_#{label}".to_sym
             value_method_name = "#{prefix}#{label}#{suffix}"
+            inverse_value_method_name = "#{prefix}#{inverse_label}#{suffix}"
             enum_values[label] = value
             label = label.to_s
 
             # def active?() status == "active" end
             klass.send(:detect_enum_conflict!, name, "#{value_method_name}?")
             define_method("#{value_method_name}?") { self[attr] == label }
+
+            # def not_active?() status.present? && status != "active" end
+            unless values.include?(inverse_label) || inverse_label.to_s.start_with?("not_not_")
+              klass.send(:detect_enum_conflict!, name, "#{inverse_value_method_name}?")
+              define_method("#{inverse_value_method_name}?") { self[attr].present? && self[attr] != label }
+            end
 
             # def active!() update!(status: 0) end
             klass.send(:detect_enum_conflict!, name, "#{value_method_name}!")
@@ -211,8 +223,8 @@ module ActiveRecord
               klass.send(:detect_enum_conflict!, name, value_method_name, true)
               klass.scope value_method_name, -> { where(attr => value) }
 
-              klass.send(:detect_enum_conflict!, name, "not_#{value_method_name}", true)
-              klass.scope "not_#{value_method_name}", -> { where.not(attr => value) }
+              klass.send(:detect_enum_conflict!, name, inverse_value_method_name, true)
+              klass.scope inverse_value_method_name, -> { where.not(attr => value) }
             end
           end
         end
